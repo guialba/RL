@@ -1,14 +1,14 @@
 import numpy as np
 
-class RLagent:
-    pass
-
 
 class Grid:
     north = (-1, 0)
     south = (1, 0)
     east = (0, 1)
     west = (0, -1)
+
+    ACTIONS = [north, south, east, west]
+    
     def __init__(self, 
                 size=(5,5), 
                 effects={(0,1):(4,1), (0,3):(2,3)}, 
