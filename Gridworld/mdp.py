@@ -87,8 +87,6 @@ class Grid(MDP):
     def print(self, display='index'):
         maps = {self.west:"\u2190", self.north:"\u2191", self.east:"\u2192", self.south:"\u2193"}
         plot = ''
-        c = 0
-        l = 0
         for x in range(self.size[0]):
             c = 0
             l = 0
@@ -110,7 +108,3 @@ class Grid(MDP):
         plot += '-'+'-'*(l+c*3)
 
         print(plot)
-
-
-
-

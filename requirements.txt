@@ -1,0 +1,8 @@
+
+numpy
+matplotlib
+seaborn
+scipy
+gym
+kaggle-environments
+stable-baselines3
