@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.stats import poisson
 
 class MDP:
     ACTIONS = []
@@ -18,40 +17,29 @@ class MDP:
         s_ = s
         return s_
 
-    def p(self, s=None, a=None):
-        return 1
-
-    def bellman_expectation(self, s_, r, gamma=0.9):
-        result = 0
-        for s, _ in enumerate(self.STATES):
-            # for a, _ in enumerate(self.ACTIONS):
-                # for s2, _ in enumerate(self.STATES):
-            if (s, s_) in self.ps: 
-                result += self.ps[s, s_]*(r + gamma*self.V[s_])
-        return result
+    def bellman_expectation(self, s_, r, p_s=1, gamma=0.9):
+        return p_s*(r + gamma*self.V[s_])
 
     def policy_evaluation(self, theta=1e-4, inplace=True):
         newV = self.V if inplace else np.zeros_like(self.V)
-        i = 0
         while True:
             delta=0
             for s,_ in enumerate(self.STATES):
                 v = newV[s]
                 newV[s] = self.bellman_expectation(*self.transition(s, self.Pi[s]))
                 delta = max(delta, np.abs(v-newV[s]))
-            i += 1
             if delta < theta: 
-                return np.round(newV, decimals=2, out=newV), i
+                return np.round(newV, decimals=2, out=newV)
 
     def policy_iteration(self):
         policy_stable = False
         while not policy_stable:
-            _, i = self.policy_evaluation()
+            self.policy_evaluation()
             for s,_ in enumerate(self.STATES):
                 old_action = self.Pi[s]
                 acts = [self.bellman_expectation(*self.transition(s, a)) for a,_ in enumerate(self.ACTIONS)]
                 self.Pi[s] = np.argmax(acts)
-                if old_action == self.Pi[s] or i == 1:
+                if old_action == self.Pi[s]:
                     policy_stable = True
         return self.V, self.Pi
 
@@ -120,77 +108,3 @@ class Grid(MDP):
         plot += '-'+'-'*(l+c*3)
 
         print(plot)
-
-class CarRental(MDP):
-    MAX_CARS_PER_LOCATION = 20
-    MAX_CARS_MOVED = 5
-    COST_PER_CAR_MOVED = 2
-    RENTAL_PRICE = 10
-    
-    def __init__(self, max_car=20):
-        self.MAX_CARS_PER_LOCATION = max_car
-        self.ACTIONS = [i for i in range(-self.MAX_CARS_MOVED, self.MAX_CARS_MOVED+1)]
-        self.STATES = [(l1, l2) for l1 in range(self.MAX_CARS_PER_LOCATION) for l2 in range(self.MAX_CARS_PER_LOCATION)]
-        self.REWARDS = []
-        self.ps = {}
-
-        super().__init__()
-        self.Pi.fill(5)
-
-    def reward(self, n_requests, moves):
-        return self.RENTAL_PRICE*n_requests - np.abs(moves)*self.COST_PER_CAR_MOVED
-
-    def p(self, s, a):
-        rented = [n if self.requests[location][0]>=n else self.requests[location][0] for location, n in enumerate(self.STATES[s])]
-        for s_, newS in enumerate(self.STATES):
-            if ((self.STATES[s][0] + a[0] - rented[0] == newS[0]) 
-            and (self.STATES[s][1] + a[1] - rented[1] == newS[1])): 
-                self.ps[(s, s_)] = sum(req[0]*ret[0] for req, ret in zip(self.requests, self.returns)) 
-            else: self.ps[(s, s_)] = 0
-
-    def transition(self, s, a, lambda_requests=[3,4], lambda_returns=[3,2]):
-        requests = [np.random.poisson(lambda_request) for lambda_request in lambda_requests]
-        returns  = [np.random.poisson(lambda_return) for lambda_return in lambda_returns]
-        self.requests = [(v, poisson.pmf(v, lambda_requests[i])) for i, v in enumerate(requests)]
-        self.returns = [(v, poisson.pmf(v, lambda_requests[i])) for i, v in enumerate(returns)]
-
-        a_effect = [-self.ACTIONS[a], self.ACTIONS[a]]
-
-        s_ = list(self.STATES[s])
-        r = list(self.STATES[s])
-        for location, n in enumerate(self.STATES[s]):
-            rented = n if self.requests[location][0]>=n else self.requests[location][0]
-            s_[location] = n - rented + a_effect[location]
-            r[location] = self.reward(rented, self.ACTIONS[a])
-
-            s_[location] = s_[location] + self.returns[location][0] if (s_[location] + self.returns[location][0]) <= self.MAX_CARS_PER_LOCATION-1 else self.MAX_CARS_PER_LOCATION-1
-
-        new_s = np.ravel_multi_index(s_, [self.MAX_CARS_PER_LOCATION]*len(self.STATES[s]))
-
-        self.p(s, a_effect)
-        
-        return new_s, np.sum(r)
-
-    def print(self, display):
-        plot = ''
-        for x in range(self.MAX_CARS_PER_LOCATION):
-            c = 0
-            l = 0
-            contents = '| '
-            for y in range(self.MAX_CARS_PER_LOCATION):
-                s = np.ravel_multi_index((x,y), (self.MAX_CARS_PER_LOCATION, self.MAX_CARS_PER_LOCATION))
-                if display == 'index':
-                    icon = f'{x},{y}'
-                if display == 'policy':
-                    icon = f'{self.ACTIONS[self.Pi[s]]}'
-                elif type(display) in [type([]), type(np.zeros((1,1)))]:
-                    icon = display[x][y]
-                c += 1
-                l += len(str(icon))
-                contents += str(icon)+' | '
-            plot += '-'+'-'*(l+c*3) + '\n' + contents + '\n'
-
-        plot += '-'+'-'*(l+c*3)
-
-        print(plot)
-
