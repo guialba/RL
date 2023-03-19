@@ -116,6 +116,10 @@ class AI(Human):
 
         # return ax , arrows, arr
 
+class DP(AI):
+    def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
+        pass
+
 class QLearning(AI):
     def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
         while True:

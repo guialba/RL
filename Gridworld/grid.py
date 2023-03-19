@@ -15,11 +15,24 @@ class Grid:
             ):
         self.size = size
         self.effects = {
-            (3,3):{'terminal': True, 'reward': 10}
+            (4,2):{'terminal': True, 'reward': 10},
             # Rotate Actions Zones
-            # Upper left - UP-UP, DOWN-DOWN, RIGHT-RIGHT, LEFT-LEFT 
-            # (0,1):{'move': (4,1), 'reward': 10},
-            # (0,3):{'move': (2,3), 'reward': 5}
+            #   * Upper Left - UP-UP, DOWN-DOWN, RIGHT-RIGHT, LEFT-LEFT 
+            #   * Upper Right - UP-RIGHT, DOWN-LEFT, RIGHT-DOWN, LEFT-UP 
+            (3,0):{'noise': lambda a: [-a[1], a[0]]},
+            (4,0):{'noise': lambda a: [-a[1], a[0]]},
+            (3,1):{'noise': lambda a: [-a[1], a[0]]},
+            (4,1):{'noise': lambda a: [-a[1], a[0]]},
+            #   * Lower Right - UP-DOWN, DOWN-UP, RIGHT-LEFT, LEFT-RIGHT 
+            (3,3):{'noise': lambda a: [-a[0], -a[1]]},
+            (4,3):{'noise': lambda a: [-a[0], -a[1]]},
+            (3,4):{'noise': lambda a: [-a[0], -a[1]]},
+            (4,4):{'noise': lambda a: [-a[0], -a[1]]},
+            #   * Lower Left - UP-LEFT, DOWN-RIGHT, RIGHT-UP, LEFT-DOWN 
+            (0,3):{'noise': lambda a: [a[1], -a[0]]},
+            (1,3):{'noise': lambda a: [a[1], -a[0]]},
+            (0,4):{'noise': lambda a: [a[1], -a[0]]},
+            (1,4):{'noise': lambda a: [a[1], -a[0]]},
         }
 
     def transition(self, state, action):
@@ -28,6 +41,8 @@ class Grid:
         terminal = False
 
         if tuple(state) in self.effects:
+            if 'noise' in self.effects[tuple(state)]:
+                newState = tuple(np.array(state)+np.array(self.effects[tuple(state)]['noise'](action))) 
             if 'reward' in self.effects[tuple(state)]:
                 reward = self.effects[tuple(state)]['reward']
             if 'move' in self.effects[tuple(state)]:
