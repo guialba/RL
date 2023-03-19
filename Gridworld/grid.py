@@ -16,6 +16,8 @@ class Grid:
         self.size = size
         self.effects = {
             (3,3):{'terminal': True, 'reward': 10}
+            # Rotate Actions Zones
+            # Upper left - UP-UP, DOWN-DOWN, RIGHT-RIGHT, LEFT-LEFT 
             # (0,1):{'move': (4,1), 'reward': 10},
             # (0,3):{'move': (2,3), 'reward': 5}
         }
