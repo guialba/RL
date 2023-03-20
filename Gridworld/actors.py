@@ -116,9 +116,15 @@ class AI(Human):
 
         # return ax , arrows, arr
 
-class DP(AI):
-    def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
-        pass
+# class DP(AI):
+#     def run(self, alpha=0.5, epsilon=0.1, gamma=0.9, theta=0.01):
+#         while True:
+#             delta = 0
+#             for s in self.Q:
+#                 v = sum(av for _, av in self.Q.items)
+
+
+#             if delta < theta: break
 
 class QLearning(AI):
     def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
