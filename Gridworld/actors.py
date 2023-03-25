@@ -16,44 +16,52 @@ def e_greedy(values, e):
 
     return explore if should_explore else exploit
 
-
 class Human:
     def __init__(self, grid):
         self.g = grid
         self.resetCount()
 
     def resetCount(self):
+        self.trajectory = []
         self.totalReward = 0
         self.steps = 0
         self.current_state = (0,0)
 
+    def takeAction(self, S, A):
+        self.trajectory.append({'s': S, 'a': A})
+        S_, R, end = self.g.transition(S, A)
+
+        self.current_state = S_
+        self.totalReward += R
+        self.steps += 1
+
+        return S_, R, end
+
+
     def run(self):
         actions = ['up', 'down', 'right', 'left', 'w', 's', 'd', 'a']
-        pos = (0,0)
         while True:
+            S = self.current_state
             clear_output(wait=False)
             print('Steps:', self.steps) 
             print('Rewards:', self.totalReward) 
-            self.g.print(display=pos) 
-            print(pos) 
+            self.g.print(display=S) 
+            print(S) 
             time.sleep(.2)
 
             a = input()
             end = False
             if a in actions:
-                print(self.g.ACTIONS[actions.index(a.lower())%4])
-                pos, r, end = self.g.transition(pos, 
-                                            self.g.ACTIONS[actions.index(a.lower())%4]
-                                        )
-                self.totalReward += r
-                self.steps += 1
+                A = self.g.ACTIONS[actions.index(a.lower())%4]
+                print(A)
+                _, _, end = self.takeAction(S, A)
             
             if 'exit' in a or end:
                 clear_output(wait=False)
                 print('Steps:', self.steps) 
                 print('Rewards:', self.totalReward) 
-                self.g.print(display=pos) 
-                print(pos) 
+                self.g.print(display=S) 
+                print(S) 
                 break
 
 class AI(Human):
@@ -62,18 +70,11 @@ class AI(Human):
         self.S = [(x, y) for y in range(self.g.size[0]) for x in range(self.g.size[1])]
         self.Q = {s: {a:0 for a in self.g.ACTIONS} for s in self.S}
 
-        self.totalReward = 0
-        self.steps = 0
         self.observations = {s: {a:[] for a in self.g.ACTIONS} for s in self.S}
 
     def takeAction(self, S, A):
-        S_, R, end = self.g.transition(S, A)
-
-        self.current_state = S_
-        self.totalReward += R
-        self.steps += 1
+        S_, R, end = super().takeAction(S, A)
         self.observations[S][A].append((S_, R)) 
-
         return S_, R, end
 
     def plot(self):
@@ -116,21 +117,10 @@ class AI(Human):
 
         # return ax , arrows, arr
 
-# class DP(AI):
-#     def run(self, alpha=0.5, epsilon=0.1, gamma=0.9, theta=0.01):
-#         while True:
-#             delta = 0
-#             for s in self.Q:
-#                 v = sum(av for _, av in self.Q.items)
-
-
-#             if delta < theta: break
-
 class QLearning(AI):
     def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
         while True:
             S = self.current_state
-            # A = random.choice(self.g.ACTIONS) if random.random() < epsilon else max(self.Q[S], key=self.Q[S].get)
             A = e_greedy(self.Q[S], epsilon)
             S_, R, end = self.takeAction(S, A)
 
@@ -174,7 +164,7 @@ class PiorSweep(AI):
         super().__init__(grid)
         self.MODEL = {s: {a: (0,0) for a in self.g.ACTIONS} for s in self.S}    
 
-    def run(self, n=5, alpha=0.1, epsilon=0.9, gamma=0.9, theta=0.1):
+    def run(self, n=5, alpha=0.1, epsilon=0.1, gamma=0.9, theta=0.1):
         PQueue = PriorityQueue()
 
         while True:
@@ -205,5 +195,65 @@ class PiorSweep(AI):
             if end: break
 
 
+class BehavioralCloning(AI):
+    def __init__(self, grid):
+        super().__init__(grid)
+        
+        self.Pi = {s: 0 for s in self.S}
 
+    # def imitate(self, trajectories):
+    #     for xi  in trajectories:
+    #         for step in range(1, len(xi)):
+    #             S = xi[step-1]['s']
+    #             A = xi[step-1]['a']
+    #             S_ = xi[step]['a']
+    #             self.MODEL[S][A].append((S_, 0))
+
+    # def imitate(self, xi):
+    #     c = {s: [] for s in self.S}
+    #     xi_c = {c[s_a['s']].append(s_a['a']) for s_a in xi}
+    #     # c.update(xi_c)
+    #     pi = {s: {a: o.count(s)/len(o) for a in o} for s, o in c.items()}
+    #     pi = {s: max(a, key=a.get) for s, a in pi}
+
+    #     lambda arr, s: max([ for state in arr if state['s'] == s]) 
+    #     pi = {s: a for s in self.S for a in self.g.ACTIONS}
+
+
+    def estimate_Pi(self, x):
+        # matriz de contagem 
+        n = np.array([sum(all(x[n][0] == s) and all(x[n][1] == a) for n in range(len(x))) for a in self.g.ACTIONS for s in self.g.S]).reshape(len(self.g.ACTIONS), len(self.g.S)).T
+        # p_ij = n_ij \ SUM(n_i)
+        p = lambda s,a: n[s,a] / sum(n[s]) 
+        return np.array([[p(s,a) for a in range(len(self.g.ACTIONS))] for s in range(len(self.g.S))])
+
+    def estimate_P(self, x):
+        # matriz de contagem 
+        n = np.array([sum(all(x[n][0] == s) and all(x[n][1] == a) and all(x[n+1][0] == s_) for n in range(len(x)-1)) for s in self.g.S for a in self.g.ACTIONS for s_ in self.g.S]).reshape(len(self.g.S), len(self.g.ACTIONS), len(self.g.S)).T
+        # p_ij = n_ij \ SUM(n_i)
+        p = lambda s,a,s_: n[s,a,s_] / sum(n[s,a]) 
+        return np.array([[[p(s,a, s_) for s_ in range(len(self.g.S))] for a in range(len(self.g.ACTIONS))] for s in range(len(self.g.S))])
+
+
+    def imitate(self, trajectory):
+        xi = np.array([(step['s'], step['a']) for step in trajectory])
+        pi = self.estimate_Pi(xi)
+        p = self.estimate_P(xi)
+        
+        return pi, p
+        
+
+        
+
+    def run(self, alpha=0.5, gamma=0.9):
+        while True:
+            S = self.current_state
+            A = self.Pi(self.Q[S])
+            S_, R, end = self.takeAction(S, A)
+
+            a = max(self.Q[S_], key=self.Q[S_].get)
+            self.Q[S][A] = self.Q[S][A] + alpha*(R + gamma* self.Q[S_][a] - self.Q[S][A])
+
+            if end:
+                break
 

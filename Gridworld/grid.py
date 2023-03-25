@@ -13,9 +13,18 @@ class Grid:
     def __init__(self, 
                 size=(5,5), 
             ):
+        self.S = [(i,j) for j in range(size[1]) for i in range(size[0])]
         self.size = size
         self.effects = {
             (4,2):{'terminal': True, 'reward': 10},
+
+            # Blocked
+            (2,1):{'blocked': True},
+            (2,2):{'blocked': True},
+            (2,3):{'blocked': True},
+            (1,2):{'blocked': True},
+            (3,2):{'blocked': True},
+           
             # Rotate Actions Zones
             #   * Upper Left - UP-UP, DOWN-DOWN, RIGHT-RIGHT, LEFT-LEFT 
             #   * Upper Right - UP-RIGHT, DOWN-LEFT, RIGHT-DOWN, LEFT-UP 
@@ -34,6 +43,9 @@ class Grid:
             (0,4):{'noise': lambda a: [a[1], -a[0]]},
             (1,4):{'noise': lambda a: [a[1], -a[0]]},
         }
+
+    def getBlockeds(self):
+        return [s for s, eff in self.effects.items() if eff.get('blocked', False)]
 
     def transition(self, state, action):
         newState = tuple(np.array(state)+np.array(action))
@@ -57,6 +69,11 @@ class Grid:
                 reward = self.effects[tuple(newState)]['reward']
             if 'terminal' in self.effects[tuple(newState)]:
                 terminal = self.effects[tuple(newState)]['terminal']
+            if 'blocked' in self.effects[tuple(newState)]:
+                if self.effects[tuple(newState)]['blocked']:
+                    reward = -1
+                    newState = state
+                    terminal = False
         
         return newState, reward, terminal
 
