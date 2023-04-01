@@ -16,7 +16,7 @@ class Grid:
         self.S = [(i,j) for j in range(size[1]) for i in range(size[0])]
         self.size = size
         self.effects = {
-            (4,2):{'terminal': True, 'reward': 10},
+            (4,4):{'terminal': True, 'reward': 10},
 
             # Blocked
             (2,1):{'blocked': True},
@@ -36,7 +36,7 @@ class Grid:
             (3,3):{'noise': lambda a: [-a[0], -a[1]]},
             (4,3):{'noise': lambda a: [-a[0], -a[1]]},
             (3,4):{'noise': lambda a: [-a[0], -a[1]]},
-            (4,4):{'noise': lambda a: [-a[0], -a[1]]},
+            # (4,4):{'noise': lambda a: [-a[0], -a[1]]},
             #   * Lower Left - UP-LEFT, DOWN-RIGHT, RIGHT-UP, LEFT-DOWN 
             (0,3):{'noise': lambda a: [a[1], -a[0]]},
             (1,3):{'noise': lambda a: [a[1], -a[0]]},

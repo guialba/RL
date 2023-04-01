@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from queue import PriorityQueue
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression
 
 def e_greedy(values, e):
     should_explore = np.random.rand() < e
@@ -118,7 +120,7 @@ class AI(Human):
         # return ax , arrows, arr
 
 class QLearning(AI):
-    def run(self, alpha=0.5, epsilon=0.1, gamma=0.9):
+    def run(self, alpha=0.5, epsilon=0.5, gamma=0.9):
         while True:
             S = self.current_state
             A = e_greedy(self.Q[S], epsilon)
@@ -201,46 +203,29 @@ class BehavioralCloning(AI):
         
         self.Pi = {s: 0 for s in self.S}
 
-    # def imitate(self, trajectories):
-    #     for xi  in trajectories:
-    #         for step in range(1, len(xi)):
-    #             S = xi[step-1]['s']
-    #             A = xi[step-1]['a']
-    #             S_ = xi[step]['a']
-    #             self.MODEL[S][A].append((S_, 0))
-
-    # def imitate(self, xi):
-    #     c = {s: [] for s in self.S}
-    #     xi_c = {c[s_a['s']].append(s_a['a']) for s_a in xi}
-    #     # c.update(xi_c)
-    #     pi = {s: {a: o.count(s)/len(o) for a in o} for s, o in c.items()}
-    #     pi = {s: max(a, key=a.get) for s, a in pi}
-
-    #     lambda arr, s: max([ for state in arr if state['s'] == s]) 
-    #     pi = {s: a for s in self.S for a in self.g.ACTIONS}
-
-
     def estimate_Pi(self, x):
-        # matriz de contagem 
         n = np.array([sum(all(x[n][0] == s) and all(x[n][1] == a) for n in range(len(x))) for a in self.g.ACTIONS for s in self.g.S]).reshape(len(self.g.ACTIONS), len(self.g.S)).T
-        # p_ij = n_ij \ SUM(n_i)
         p = lambda s,a: n[s,a] / sum(n[s]) 
         return np.array([[p(s,a) for a in range(len(self.g.ACTIONS))] for s in range(len(self.g.S))])
 
     def estimate_P(self, x):
-        # matriz de contagem 
         n = np.array([sum(all(x[n][0] == s) and all(x[n][1] == a) and all(x[n+1][0] == s_) for n in range(len(x)-1)) for s in self.g.S for a in self.g.ACTIONS for s_ in self.g.S]).reshape(len(self.g.S), len(self.g.ACTIONS), len(self.g.S)).T
-        # p_ij = n_ij \ SUM(n_i)
         p = lambda s,a,s_: n[s,a,s_] / sum(n[s,a]) 
         return np.array([[[p(s,a, s_) for s_ in range(len(self.g.S))] for a in range(len(self.g.ACTIONS))] for s in range(len(self.g.S))])
 
+    def estimatePiModel(self,x):
+        X, y = list(zip(*x))
+        regX = LogisticRegression().fit(X, np.array(y)[:,0])
+        regY = LogisticRegression().fit(X, np.array(y)[:,1])
+        self.pi = lambda p: (*regX.predict(np.array([p])).round(), *regY.predict(np.array([p])).round())
+    
 
     def imitate(self, trajectory):
         xi = np.array([(step['s'], step['a']) for step in trajectory])
-        pi = self.estimate_Pi(xi)
-        p = self.estimate_P(xi)
-        
-        return pi, p
+        # pi = self.estimate_Pi(xi)
+        # p = self.estimate_P(xi)
+        self.estimatePiModel(xi)
+        # return pi, p
         
 
         
