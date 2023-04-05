@@ -74,6 +74,16 @@ class AI(Human):
 
         self.observations = {s: {a:[] for a in self.g.ACTIONS} for s in self.S}
 
+    def getTrajectory(self, kind=0):
+        if kind in ['values', 0]:
+            return [(step['s'],step['a']) for step in self.trajectory]
+        elif kind in ['indexes', 1]:
+            return [(self.g.S.index(step['s']), self.g.ACTIONS.index(step['a'])) for step in self.trajectory]
+        elif kind in ['states values', 2]:
+            return [(step['s'], self.g.ACTIONS.index(step['a'])) for step in self.trajectory]
+        elif kind in ['action values', 3]:
+            return [(self.g.S.index(step['s']), step['a']) for step in self.trajectory]
+
     def takeAction(self, S, A):
         S_, R, end = super().takeAction(S, A)
         self.observations[S][A].append((S_, R)) 

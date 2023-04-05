@@ -44,6 +44,10 @@ class Grid:
             (1,4):{'noise': lambda a: [a[1], -a[0]]},
         }
 
+    def isBlocked(self, x, y, s=None):
+        s = (x, y) if s is None else s
+        return self.effects.get(s, {}).get('blocked', False)
+        
     def getBlockeds(self):
         return [s for s, eff in self.effects.items() if eff.get('blocked', False)]
 
