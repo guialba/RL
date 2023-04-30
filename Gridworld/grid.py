@@ -8,7 +8,7 @@ class Grid:
     right = (1, 0)
     left = (-1, 0)
 
-    ACTIONS = [up, down, right, left]
+    A = [up, down, right, left]
     
     def __init__(self, 
                 size=(5,5), 
@@ -44,6 +44,12 @@ class Grid:
             (1,4):{'noise': lambda a: [a[1], -a[0]]},
         }
 
+        self.Q = np.zeros((len(self.S), len(self.A)))
+        self.PI = np.zeros((len(self.S), len(self.A)))
+
+        # self.v_is_optimal = False
+        # self.pi_is_optimal = False
+
     def isBlocked(self, x, y, s=None):
         s = (x, y) if s is None else s
         return self.effects.get(s, {}).get('blocked', False)
@@ -51,7 +57,9 @@ class Grid:
     def getBlockeds(self):
         return [s for s, eff in self.effects.items() if eff.get('blocked', False)]
 
-    def transition(self, state, action):
+    def transition(self, s, a):
+        state, action = self.S[s], self.A[a]
+
         newState = tuple(np.array(state)+np.array(action))
         reward = 0
         terminal = False
@@ -79,7 +87,39 @@ class Grid:
                     newState = state
                     terminal = False
         
-        return newState, reward, terminal
+        s_ = self.S.index(newState)
+        return s_, reward, terminal
+    
+
+    def q_star(self, theta=1e-4, gamma=.9):
+        newQ = self.Q
+        while True:
+            delta=0
+            for s,sv in enumerate(self.S):
+                for a,_ in enumerate(self.A):
+                    if self.isBlocked(*sv):
+                        continue 
+                    q = newQ[s][a]
+                    s_, r, _ = self.transition(s, a)
+                    newQ[s][a] = r + gamma*max(self.Q[s_])
+                    # newQ[s][a] = r + gamma*self.Q[s_][np.argmax(self.PI[s_])]
+                    delta = max(delta, np.abs(q-newQ[s][a]))
+            if delta < theta: 
+                return np.round(newQ, decimals=2, out=newQ)
+    
+    def pi_star(self, epsilon=.1, theta=1e-4, gamma=.9):
+        policy_stable = False
+
+        while not policy_stable:
+            self.q_star(theta=theta, gamma=gamma)
+            for s,_ in enumerate(self.S):
+                old_action = np.argmax(self.PI[s])
+                self.PI[s] = [epsilon/len(self.A)] * len(self.A)
+                self.PI[s][np.argmax(self.Q[s])] = (1-epsilon) + epsilon/len(self.A)
+                if old_action == np.argmax(self.PI[s]):
+                    policy_stable = True
+        return self.PI
+
 
     def print(self, display='index'):
         plot = ''
