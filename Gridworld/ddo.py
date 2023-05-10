@@ -1,5 +1,8 @@
 import numpy as np
 
+
+
+
 class DDO:
     def __init__(self, E, H, eta):
         self.E = E
