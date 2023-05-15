@@ -68,16 +68,28 @@ class DDO:
     def u(self, h, t):
         return 1/self.posterior(t) * self.phi(h,t) * self.omega(h,t)
     
-    def v(self, h_, t):
-        if t == 0:
-            return self.u(h_, t)
+    # def v(self, h_, t):
+    #     if t == 0:
+    #         return self.u(h_, t)
 
-        s,a = self.E[t-1]
-        s_,_ = self.E[t]
+    #     s,a = self.E[t-1]
+    #     s_,_ = self.E[t]
 
-        somatoria = sum(self.phi(h,t-1) * pi[s][a] * psi[s_] for h,(pi, psi) in enumerate(self.H))
+    #     somatoria = sum(self.phi(h,t-1) * pi[s][a] * psi[s_] for h,(pi, psi) in enumerate(self.H))
 
-        return 1/self.posterior(t) * somatoria * self.eta[s_, h_] * self.omega(h_,t)
+    #     return 1/self.posterior(t) * somatoria * self.eta[s_, h_] * self.omega(h_,t)
+    
+    def v(self, h_, t_):
+        if t_ == 0:
+            return self.u(h_, t_)
+
+        t = t_ -1 
+        s,a = self.E[t]
+        s_,_ = self.E[t_]
+
+        somatoria = sum(self.phi(h,t) * pi[s][a] * psi[s_] for h,(pi, psi) in enumerate(self.H))
+
+        return 1/self.posterior(t) * somatoria * self.eta[s_, h_] * self.omega(h_,t_)
     
     def w(self, h, t):
         s,a = self.E[t]
@@ -93,10 +105,10 @@ class DDO:
         derivada_psi_ = lambda s, psi: 1/(1-psi[s]) * -1
 
         term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
-        term2 = lambda t,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(self.E[t+1][0], psi) + self.w(h, t) * derivada_psi_(self.E[t+1][0], psi)
-        # term2 = lambda t,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * derivada_psi(self.E[t+1][0], psi) + self.w(h, t) * derivada_psi_(self.E[t+1][0], psi)
+        term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+        # term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
 
-        sum_1 = lambda h, pi: sum(term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-2))
-        sum_2 = lambda h, psi: sum(term2(t,h,psi) for t,_ in enumerate(self.E) if t < (len(self.E)-3))
+        sum_1 = lambda h, pi: sum(term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1))
+        sum_2 = lambda h, psi: sum(term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E, 1) if t < (len(self.E)-1))
 
         return sum(sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H))
