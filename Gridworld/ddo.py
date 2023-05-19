@@ -68,17 +68,6 @@ class DDO:
     def u(self, h, t):
         return 1/self.posterior(t) * self.phi(h,t) * self.omega(h,t)
     
-    # def v(self, h_, t):
-    #     if t == 0:
-    #         return self.u(h_, t)
-
-    #     s,a = self.E[t-1]
-    #     s_,_ = self.E[t]
-
-    #     somatoria = sum(self.phi(h,t-1) * pi[s][a] * psi[s_] for h,(pi, psi) in enumerate(self.H))
-
-    #     return 1/self.posterior(t) * somatoria * self.eta[s_, h_] * self.omega(h_,t)
-    
     def v(self, h_, t_):
         if t_ == 0:
             return self.u(h_, t_)
@@ -98,17 +87,34 @@ class DDO:
 
         return 1/self.posterior(t) * self.phi(h,t) * pi[s][a] * (1-psi[s_]) * self.omega(h,t+1)
     
-    def expectation_gradient(self):
-        derivada_pi = lambda s, a, pi: 1/pi[s][a] * (-1 + 1/len(pi[s])) if a == np.argmax(pi[s]) else 1/len(pi[s]) * 0
+    def expectation_gradient(self, mod=False):
+        derivada_pi = lambda s, a, pi: 1/pi[s][a] * ((-1 + 1/len(pi[s])), 1/len(pi[s]))[bool(a == np.argmax(pi[s]))] * 0
         derivada_eta = lambda s, h: 1/self.eta[s, h] * 0
         derivada_psi = lambda s, psi: 1/psi[s] * 1
         derivada_psi_ = lambda s, psi: 1/(1-psi[s]) * -1
 
         term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
-        term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
-        # term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+        term2 = None
+        if mod:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+        else:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
 
         sum_1 = lambda h, pi: sum(term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1))
-        sum_2 = lambda h, psi: sum(term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E, 1) if t < (len(self.E)-1))
+        sum_2 = lambda h, psi: sum(term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2))
 
         return sum(sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H))
+    
+    def expectation_gradient2(self):
+        derivada_pi = lambda s, a, pi: np.array([1/pi[s][a] * ((-1 + 1/len(pi[s])), 1/len(pi[s]))[bool(a == np.argmax(pi[s]))], 0, 0])
+        derivada_eta = lambda s, h: np.array([0, 0, 1/self.eta[s, h] * 0])
+        derivada_psi = lambda s, psi: np.array([0, 1/psi[s] * 1, 0])
+        derivada_psi_ = lambda s, psi: np.array([0, 1/(1-psi[s]) * -1, 0])
+
+        term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
+        term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+
+        sum_1 = lambda h, pi: np.sum([term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1)])
+        sum_2 = lambda h, psi: np.sum([term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2)])
+
+        return np.sum([sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H)])
