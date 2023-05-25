@@ -106,15 +106,20 @@ class DDO:
         return sum(sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H))
     
     def expectation_gradient2(self):
-        derivada_pi = lambda s, a, pi: np.array([1/pi[s][a] * ((-1 + 1/len(pi[s])), 1/len(pi[s]))[bool(a == np.argmax(pi[s]))], 0, 0])
-        derivada_eta = lambda s, h: np.array([0, 0, 1/self.eta[s, h] * 0])
-        derivada_psi = lambda s, psi: np.array([0, 1/psi[s] * 1, 0])
-        derivada_psi_ = lambda s, psi: np.array([0, 1/(1-psi[s]) * -1, 0])
+        eta_s = {
+                0: list(set(range(10, 25)) - {14}),
+                1: list(range(10))+[14], 
+            }
+
+        derivada_pi = lambda s, a, pi: np.array([0, 1/pi[s][a] * ((-1 + 1/len(pi[s])), 1/len(pi[s]))[bool(a == np.argmax(pi[s]))], 0])
+        derivada_psi = lambda s, psi: np.array([0,0, 1/psi[s] * 1])
+        derivada_psi_ = lambda s, psi: np.array([0,0, 1/(1-psi[s]) * -1])
+        derivada_eta = lambda s, h: np.array([1/self.eta[s, h] * (1,-1)[s in eta_s[h]], 0,0])
 
         term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
         term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
 
-        sum_1 = lambda h, pi: np.sum([term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1)])
-        sum_2 = lambda h, psi: np.sum([term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2)])
+        sum_1 = lambda h, pi: np.sum([term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1)], axis=0)
+        sum_2 = lambda h, psi: np.sum([term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2)], axis=0)
 
-        return np.sum([sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H)])
+        return np.sum([sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H)], axis=0)
