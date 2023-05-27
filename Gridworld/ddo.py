@@ -111,10 +111,10 @@ class DDO:
                 1: list(range(10))+[14], 
             }
 
-        derivada_pi = lambda s, a, pi: np.array([0, 1/pi[s][a] * ((-1 + 1/len(pi[s])), 1/len(pi[s]))[bool(a == np.argmax(pi[s]))], 0])
+        derivada_pi = lambda s, a, pi: np.array([0, 1/pi[s][a] * (1/len(pi[s]), (-1 + 1/len(pi[s])))[bool(a == np.argmax(pi[s]))], 0])
         derivada_psi = lambda s, psi: np.array([0,0, 1/psi[s] * 1])
         derivada_psi_ = lambda s, psi: np.array([0,0, 1/(1-psi[s]) * -1])
-        derivada_eta = lambda s, h: np.array([1/self.eta[s, h] * (1,-1)[s in eta_s[h]], 0,0])
+        derivada_eta = lambda s, h: np.array([1/self.eta[s, h] * (-1,1)[s in eta_s[h]], 0,0])
 
         term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
         term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
