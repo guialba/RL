@@ -1,13 +1,16 @@
 import numpy as np
-
+import torch
+from torch.autograd import Variable
 
 
 
 class DDO:
-    def __init__(self, E, H, eta):
+    def __init__(self, E, eta, pi, psi, generator):
+        self.generateFromTheta = generator
+        self.theta = [eta, pi, psi]
+
+        self.H, self.eta = self.generateFromTheta(eta, pi, psi)
         self.E = E
-        self.H = H
-        self.eta = eta
         self.p = None
 
         self.phi_table = [{0: self.__phi(0,h)} for h,_ in enumerate(self.H)]
@@ -105,7 +108,7 @@ class DDO:
 
         return sum(sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H))
     
-    def expectation_gradient2(self):
+    def expectation_gradient2(self,  mod=False):
         eta_s = {
                 0: list(set(range(10, 25)) - {14}),
                 1: list(range(10))+[14], 
@@ -117,7 +120,37 @@ class DDO:
         derivada_eta = lambda s, h: np.array([1/self.eta[s, h] * (-1,1)[s in eta_s[h]], 0,0])
 
         term1 = lambda t,s,a,h,pi:  self.v(h, t) * derivada_eta(s,h) + self.u(h, t) * derivada_pi(s,a,pi)
-        term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+
+        term2 = None
+        if mod:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+        else:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * derivada_psi(s_, psi) + self.w(h, t) * derivada_psi_(s_, psi)
+
+        sum_1 = lambda h, pi: np.sum([term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1)], axis=0)
+        sum_2 = lambda h, psi: np.sum([term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2)], axis=0)
+
+        return np.sum([sum_1(h, pi) + sum_2(h, psi) for h,(pi, psi) in enumerate(self.H)], axis=0)
+    
+    def expectation_gradient3(self, functions, mod=False):
+        func_eta, func_pi, func_psi = functions
+        
+        def gradientFunc(func, *params):
+            theta = Variable(torch.Tensor(self.theta), requires_grad=True)
+
+            valor = torch.log(func(theta, *params))
+
+            valor.backward(retain_graph=True)
+            grad = theta.grad.clone().numpy()
+            # theta.grad.zero_()  
+            return grad
+        
+        term1 = lambda t,s,a,h,pi:  self.v(h, t) * gradientFunc(func_eta, s, h) + self.u(h, t) * gradientFunc(func_pi, a, np.argmax(pi[s]), len(pi[s]))
+        term2 = None
+        if mod:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)*self.u(h, t)) * gradientFunc(func_psi) + self.w(h, t) * gradientFunc(lambda *x: 1-func_psi(*x))
+        else:
+            term2 = lambda t,s_,h,psi:  (self.u(h, t) - self.w(h, t)) * gradientFunc(func_psi) + self.w(h, t) * gradientFunc(lambda *x: 1-func_psi(*x))
 
         sum_1 = lambda h, pi: np.sum([term1(t,s,a,h,pi) for t,(s,a) in enumerate(self.E) if t < (len(self.E)-1)], axis=0)
         sum_2 = lambda h, psi: np.sum([term2(t-1,s_,h,psi) for t,(s_,_) in enumerate(self.E) if 0 < t <= (len(self.E)-2)], axis=0)
