@@ -7,13 +7,28 @@ import matplotlib.animation  as animation
 from discretizers import fixed_discretized_state
 
 
+def experiment(modelClass, hyper_params, episodes=1000, extra_plot_types=[]):
+    env = gym.make("CartPole-v1", render_mode="rgb_array")
+    _, axs = plt.subplots(len(hyper_params), 1+len(extra_plot_types), figsize=(10 * (len(extra_plot_types) or 1), 5*len(hyper_params)))
+    for i, param in enumerate(hyper_params):
+        model = modelClass(env, **param)
+        model.train(episodes=episodes)
+        if len(hyper_params) == 1:
+            axs = [axs]
+        if len(extra_plot_types) == 0:
+            axs = [axs]
+            
+        model.plot(axs[i][0], title=param['title'])
+        for j, plot_type in enumerate(extra_plot_types):
+            model.plot(axs[i][j+1], type=plot_type, title= f"{param['title']} - {plot_type}" if param['title'] is not None else param['title'])
+
 def epsilon_greedy(S, Q, e):
     explore = np.random.choice([0,1], p=[e, 1-e])
     return (np.random.randint(0,2), np.argmax(Q[S]))[explore]
 
 
 class RLAgent:
-    def __init__(self, env, alpha=.5, gamma=.9, epsilon=.1, state_shape=(3, 3, 10, 10), discretizer=fixed_discretized_state, init_seed=None):
+    def __init__(self, env, alpha=.5, gamma=.9, epsilon=.1, state_shape=(3, 3, 10, 10), discretizer=fixed_discretized_state, init_seed=None, *args, **kargs):
         self.dicretizer = discretizer
         self.state_shape = state_shape
         
@@ -27,7 +42,7 @@ class RLAgent:
             self.Q = np.zeros(shape=[*state_shape, 2])
         else:
             np.random.seed(init_seed)
-            self.seeds = np.random.rand(*(state_shape, 2))
+            self.Q = np.random.rand(*(state_shape, 2))
         self.data = pd.DataFrame(data={'episode':[], 'step':[], 'obs':[], 'S':[], 'A':[], 'R':[]})
 
 
@@ -59,10 +74,27 @@ class RLAgent:
             plt.imshow(frames[t], animated=True)
         return animation.FuncAnimation(fig, animate, frames=len(frames))
 
-    def plot(self, axs=None):
+    def plot(self, axs=None, title=None, xlabel='episodes', ylabel='reward', type='total_reward'):
         if axs is None:
             _, axs = plt.subplots(1, 1, figsize=(10, 4))
-        axs.plot(self.data[['episode', 'R']].groupby(['episode']).sum())
+        
+        if type == "total_reward":
+            axs.plot(self.data[['episode', 'R']].groupby(['episode']).sum().R)
+        if type == "cumulative_reward":
+            axs.plot(np.cumsum(self.data[['episode', 'R']].groupby(['episode']).sum().R))
+        if type == "moving_avg":
+            axs.plot(np.convolve(self.data[['episode', 'R']].groupby(['episode']).sum().R, np.ones(100)/100, mode='valid'))
+        if type == "cumulative_avg":
+            axs.plot(np.cumsum(self.data[['episode', 'R']].groupby(['episode']).sum().R) / (self.data[['episode', 'R']].groupby(['episode']).sum().reset_index().episode +1))
+
+        if title is not None:
+            axs.set_title(title)
+
+        if xlabel is not None:
+            axs.set_xlabel(xlabel)
+        if ylabel is not None:
+            axs.set_ylabel(ylabel)
+
         return axs
 
 
