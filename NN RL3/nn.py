@@ -13,12 +13,11 @@ import matplotlib.pyplot as plt
 # from matplotlib.patches import Circle, Rectangle
 
 class ParModel(nn.Module):
-    def __init__(self):
+    def __init__(self, n_params=2, n_features=2, n_hidden=10):
         super(ParModel, self).__init__()
-        n_features = 2
-        n_params = 2
-        n_hidden = 10
-
+        self.n_params = n_params
+        self.n_features = n_features
+        self.n_hidden = n_hidden
         self.model = nn.Sequential(
             nn.Linear(n_features, n_hidden).double(),
             nn.ReLU(),
@@ -32,20 +31,18 @@ class ParModel(nn.Module):
     def forward(self, x):
         return self.model(x)
     
-
 class BetaModel(nn.Module):
-    def __init__(self):
+    def __init__(self, k=2, n_features=2, n_hidden=10):
         super(BetaModel, self).__init__()
-        n_features = 2
-        n_models = 2
-        n_hidden = 10
-
+        self.n_params = k
+        self.n_features = n_features
+        self.n_hidden = n_hidden
         self.model = nn.Sequential(
             nn.Linear(n_features, n_hidden).double(),
             nn.ReLU(),
             nn.Linear(n_hidden, n_hidden).double(),
             nn.ReLU(),
-            nn.Linear(n_hidden, n_models).double(),
+            nn.Linear(n_hidden, k).double(),
             nn.ReLU(),
             nn.Softmax(dim=1)
             # nn.LogSoftmax(dim=1)
@@ -77,46 +74,36 @@ class BetaModel(nn.Module):
 
 
 class Model:
-    def __init__(self, env, model=None, sigmas=None, taus=None, lr=1e-4, momentum=.9):
+    def __init__(self, env, k=2, model=None, lr=1e-4, momentum=.9, *model_params):
         self.env = env
-        self.model = model or BetaModel()
-
+        self.model = model or BetaModel(k)
+        self.k = k
         self.lr = lr
         self.momentum = momentum
 
-        self.params = []
-        if sigmas is None:
-            self.sigmas = torch.nn.Parameter(torch.rand(2).type(torch.DoubleTensor))
-            self.params.append(self.sigmas)
+        if len(model_params) == 0:
+            self.sigmas = torch.nn.Parameter(torch.rand(k).type(torch.DoubleTensor))
+            self.taus = torch.nn.Parameter(torch.rand(k).type(torch.DoubleTensor))
+            self.params = [self.sigmas, self.taus]
         else:
-            self.sigmas = torch.log(torch.tensor([*sigmas])).type(torch.DoubleTensor)
+            self.params = [torch.tensor(p).type(torch.DoubleTensor) for p in model_params]
+        self.n_params = len(self.params)
 
-        if taus is None:
-            self.taus = torch.nn.Parameter(torch.rand(2).type(torch.DoubleTensor))
-            self.params.append(self.taus)
-        else:
-            self.taus = torch.tensor([*taus]).type(torch.DoubleTensor)
-
+    def infer(self, s):
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            # m = torch.round(self.model(s))[0]
+            m = self.model(s)[0]
+            return torch.round(torch.exp(self.sigmas), decimals=3).tolist()[torch.argmax(m).item()], torch.round(self.taus, decimals=3).tolist()[torch.argmax(m).item()]
 
     def loss(self, beta, sigma, tau, s, a, s_):
         ## Get Probability Values
-        mi = (
-            torch.exp(
-                normal.Normal(
-                    # ( s[:,0] + a[:,0]*force).reshape((-1,1)), torch.exp(sigma)
-                    (s[:,0] + torch.outer(a[:,0], tau).T).T, torch.exp(sigma)
-                ).log_prob( s_[:,0].reshape((-1,1)) )
-            ) 
-            * 
-            torch.exp(
-                normal.Normal(
-                    # ( s[:,1] + a[:,1]*force).reshape((-1,1)), torch.exp(sigma)
-                    (s[:,1] + torch.outer(a[:,1], tau).T).T, torch.exp(sigma)
-                ).log_prob( s_[:,1].reshape((-1,1)) )
-            )
-        )
-        ##
+        p1, p2 = torch.exp(sigma), tau
+        distribution = normal.Normal(0, p1)
+        x = s_[:,0] - (s[:,0] + a[:,0]*p2.reshape((-1,1)))
+        y = s_[:,1] - (s[:,1] + a[:,1]*p2.reshape((-1,1)))
 
+        mi = torch.exp(distribution.log_prob(x.T) + distribution.log_prob(y.T))
         p_theta = torch.sum((mi * beta), 1) 
         return -torch.sum(torch.log(p_theta))
    
@@ -133,7 +120,6 @@ class Model:
         s_ = torch.from_numpy(data['s_'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
 
         return s, a, s_
-
 
     def batch_train(self, historic_data, epochs=100, log=False):
         s, a, s_ = self.decompose_data(historic_data)       
@@ -155,9 +141,9 @@ class Model:
 
         return register
     
-    def plot(self, ax=None, t=None, n=None):
+    def plot_values(self, ax=None):
         if ax is None:
-            _, ax = plt.subplots(figsize=(5, 5))
+            _, ax = plt.subplots(ncols=self.n_params, figsize=(self.n_params*5, 5))
         
         size = 10
         res = 50
@@ -166,25 +152,60 @@ class Model:
 
         d = torch.from_numpy( np.stack((X, Y), axis=-1).reshape(-1, 2) ).type(torch.DoubleTensor)
         with torch.no_grad():
-            corr = self.model(d)[:,1].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
-            p = ax.imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1), vmin = 0, vmax = 1)
-            plt.colorbar(p)
-        ax.invert_yaxis()
-        ax.text(-size,size+1.5, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()}, tau: {torch.round(self.taus, decimals=3).tolist()}')
+            pred = self.model(d)
+            for k in range(self.n_params):
+                corr = torch.argmax(pred, 1).reshape(int(X.size**(1/2)), int(X.size**(1/2)))
+                corr = torch.take(self.params[k], corr)
+                corr = corr if k>0 else torch.exp(corr)
+                p = ax[k].imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1))
+                plt.colorbar(p)
+                ax[k].invert_yaxis()
+                ax[k].set_title(f'theta_{k}: [{torch.round(torch.min(corr), decimals=3)} : {torch.round(torch.max(corr), decimals=3)}]')
+
+        return ax
+    
+    def plot_probs(self, ax=None):
+        if ax is None:
+            _, ax = plt.subplots(ncols=self.k, figsize=(self.k*5, 5))
+        
+        size = 10
+        res = 50
+        lin = np.linspace(-size, size, res).reshape(-1,1)
+        X,Y = np.meshgrid(lin, lin)
+
+        d = torch.from_numpy( np.stack((X, Y), axis=-1).reshape(-1, 2) ).type(torch.DoubleTensor)
+        with torch.no_grad():
+            pred = self.model(d)
+            for k in range(self.k):
+                corr = pred[:,k].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
+                p = ax[k].imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1), vmin = 0, vmax = 1)
+                plt.colorbar(p)
+                ax[k].invert_yaxis()
+                # ax[k].text(-size,size+3, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()[k]}')
+                # ax[k].text(-size,size+1.5, f'tau: {torch.round(self.taus, decimals=3).tolist()[k]}')
+                ax[k].set_title(f'model_{k}')
+                for i in range(self.n_params):
+                    ax[k].text(-size,-size-4.-i*1.5, f'theta_{i}: {torch.round(torch.exp(self.params[i]) if i==0 else self.params[i], decimals=3).tolist()[k]}')
 
         return ax
 
 
-
-
 class GeneralModel:
-    def __init__(self, env, model=None, lr=1e-4, momentum=.9):
+    def __init__(self, env, model=None, lr=1e-4, momentum=.9, n_params=2):
         self.env = env
-        self.model = model or ParModel()
+        self.n_params = n_params
+        self.k = n_params
+        self.model = model or ParModel(n_params)
 
         self.lr = lr
         self.momentum = momentum
         self.optim = torch.optim.SGD(list(self.model.parameters()), lr=self.lr, momentum=self.momentum)
+
+    def infer(self, s):
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            inf = self.model(s)
+            return torch.exp(inf[:,0]).item(), inf[:,1].item()
 
     def loss(self, params, s, a, s_):
         p1, p2 = torch.exp(params[:, 0]), params[:, 1]
@@ -192,7 +213,6 @@ class GeneralModel:
         distribution = normal.Normal(0, p1)
         value = s_- (s + a*p2.reshape((-1,1)))
         return -torch.sum( distribution.log_prob(value[:,0]) + distribution.log_prob(value[:,1]) )
-
    
     def decompose_data(self, data):
         ## Factorate Action
@@ -207,7 +227,6 @@ class GeneralModel:
         s_ = torch.from_numpy(data['s_'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
 
         return s, a, s_
-
 
     def batch_train(self, historic_data, epochs=100, log=False):
         s, a, s_ = self.decompose_data(historic_data)       
@@ -232,9 +251,9 @@ class GeneralModel:
 
         return register
     
-    def plot(self, ax=None, param=0):
+    def plot_values(self, ax=None):
         if ax is None:
-            _, ax = plt.subplots(figsize=(5, 5))
+            _, ax = plt.subplots(ncols=self.n_params, figsize=(self.n_params*5, 5))
         
         size = 10
         res = 50
@@ -243,20 +262,28 @@ class GeneralModel:
 
         d = torch.from_numpy( np.stack((X, Y), axis=-1).reshape(-1, 2) ).type(torch.DoubleTensor)
         with torch.no_grad():
-            corr = self.model(d)[:,param].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
-            bounds = {'vmin': min(self.env.theta[1:][param]), 'vmax': max(self.env.theta[1:][param])}
-            # bounds = {}
-            p = ax.imshow(  corr if param>0 else torch.exp(corr), 
-                            extent=(
-                                int(min(lin))-1, int(max(lin))+1, 
-                                int(max(lin))+1, int(min(lin))-1
-                            ), 
-                            **bounds
-                        )
-            plt.colorbar(p)
-        ax.set_title(f'theta_{param}')
-        ax.invert_yaxis()
+            pred = self.model(d)
+            for k in range(self.n_params):
+                corr = pred[:,k].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
+                corr = corr if k>0 else torch.exp(corr)
+                # bounds = {'vmin': min(self.env.theta[1:][k]), 'vmax': max(self.env.theta[1:][k])}
+                bounds = {}
+                # bounds = {}
+                p = ax[k].imshow(corr, 
+                                extent=(
+                                    int(min(lin))-1, int(max(lin))+1, 
+                                    int(max(lin))+1, int(min(lin))-1
+                                ), 
+                                **bounds
+                            )
+                plt.colorbar(p)
+                ax[k].set_title(f'theta_{k}: [{torch.round(torch.min(corr), decimals=3)} : {torch.round(torch.max(corr), decimals=3)}]')
+                ax[k].invert_yaxis()
         # ax.text(-size,size+1.5, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()}, tau: {torch.round(self.taus, decimals=3).tolist()}')
 
         return ax
+    
+    def plot_probs(self, ax=None):
+        print('Parametros estimados para cada estado.')
+        return None
     

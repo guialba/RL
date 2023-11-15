@@ -4,16 +4,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from experiment import Trajectory
-from nn import BetaModel, Model
+from nn import Model
 
 def epsilon_greedy(S, Q, e=.2, z=4):
     explore = np.random.choice([0,1], p=[e, 1-e])
     return np.random.randint(0,z) if explore else np.argmax(Q[S])
 
 class Agent:
-    def __init__(self, env, model=None, alpha=.3, gamma=.9, epsilon=.2, state_space_size=50, init_seed=None):
+    def __init__(self, env, model=None, alpha=.1, gamma=.9, epsilon=.3, state_space_size=50, init_seed=None, **model_params):
         self.env = env
-        self.model =  model or Model(self.env, BetaModel())
+        self.model =  model or Model(self.env, **model_params)
 
         self.alpha = alpha
         self.gamma = gamma
@@ -72,8 +72,9 @@ class Agent:
         np.random.seed(seed)
 
         for epi in range(episodes):
-            trajectory = self.episode(log)
+            trajectory = self.episode(log) # Controle
             ll = self.model.batch_train(trajectory.run, epochs) if model_learn else [None]
+            self.plan() # Predição
             if log:
                 print(ll[0], ll[-1])
                 self.model.plot(trajectory.plot(self.env.plot(background=False))).get_figure().savefig(f'logs\epi-{epi}.png')

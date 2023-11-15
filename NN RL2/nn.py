@@ -13,10 +13,10 @@ import matplotlib.pyplot as plt
 # from matplotlib.patches import Circle, Rectangle
 
 class ParModel(nn.Module):
-    def __init__(self):
+    def __init__(self, k=2):
         super(ParModel, self).__init__()
         n_features = 2
-        n_params = 2
+        n_params = k
         n_hidden = 10
 
         self.model = nn.Sequential(
@@ -34,10 +34,10 @@ class ParModel(nn.Module):
     
 
 class BetaModel(nn.Module):
-    def __init__(self):
+    def __init__(self, k=2):
         super(BetaModel, self).__init__()
         n_features = 2
-        n_models = 2
+        n_models = k
         n_hidden = 10
 
         self.model = nn.Sequential(
@@ -77,46 +77,42 @@ class BetaModel(nn.Module):
 
 
 class Model:
-    def __init__(self, env, model=None, sigmas=None, taus=None, lr=1e-4, momentum=.9):
+    def __init__(self, env, k=2, model=None, sigmas=None, taus=None, lr=1e-4, momentum=.9):
         self.env = env
-        self.model = model or BetaModel()
+        self.model = model or BetaModel(k)
 
         self.lr = lr
         self.momentum = momentum
 
         self.params = []
         if sigmas is None:
-            self.sigmas = torch.nn.Parameter(torch.rand(2).type(torch.DoubleTensor))
+            self.sigmas = torch.nn.Parameter(torch.rand(k).type(torch.DoubleTensor))
             self.params.append(self.sigmas)
         else:
             self.sigmas = torch.log(torch.tensor([*sigmas])).type(torch.DoubleTensor)
 
         if taus is None:
-            self.taus = torch.nn.Parameter(torch.rand(2).type(torch.DoubleTensor))
+            self.taus = torch.nn.Parameter(torch.rand(k).type(torch.DoubleTensor))
             self.params.append(self.taus)
         else:
             self.taus = torch.tensor([*taus]).type(torch.DoubleTensor)
 
+    def infer(self, s):
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            m = torch.round(self.model(s))[0]
+            return torch.round(torch.exp(self.sigmas), decimals=3).tolist()[torch.argmax(m).item()], torch.round(self.taus, decimals=3).tolist()[torch.argmax(m).item()]
+
+
 
     def loss(self, beta, sigma, tau, s, a, s_):
         ## Get Probability Values
-        mi = (
-            torch.exp(
-                normal.Normal(
-                    # ( s[:,0] + a[:,0]*force).reshape((-1,1)), torch.exp(sigma)
-                    (s[:,0] + torch.outer(a[:,0], tau).T).T, torch.exp(sigma)
-                ).log_prob( s_[:,0].reshape((-1,1)) )
-            ) 
-            * 
-            torch.exp(
-                normal.Normal(
-                    # ( s[:,1] + a[:,1]*force).reshape((-1,1)), torch.exp(sigma)
-                    (s[:,1] + torch.outer(a[:,1], tau).T).T, torch.exp(sigma)
-                ).log_prob( s_[:,1].reshape((-1,1)) )
-            )
-        )
-        ##
+        p1, p2 = torch.exp(sigma), tau
+        distribution = normal.Normal(0, p1)
+        x = s_[:,0] - (s[:,0] + a[:,0]*p2.reshape((-1,1)))
+        y = s_[:,1] - (s[:,1] + a[:,1]*p2.reshape((-1,1)))
 
+        mi = torch.exp(distribution.log_prob(x.T) + distribution.log_prob(y.T))
         p_theta = torch.sum((mi * beta), 1) 
         return -torch.sum(torch.log(p_theta))
    
@@ -170,7 +166,8 @@ class Model:
             p = ax.imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1), vmin = 0, vmax = 1)
             plt.colorbar(p)
         ax.invert_yaxis()
-        ax.text(-size,size+1.5, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()}, tau: {torch.round(self.taus, decimals=3).tolist()}')
+        ax.text(-size,size+3, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()}')
+        ax.text(-size,size+1.5, f'tau: {torch.round(self.taus, decimals=3).tolist()}')
 
         return ax
 
@@ -178,13 +175,19 @@ class Model:
 
 
 class GeneralModel:
-    def __init__(self, env, model=None, lr=1e-4, momentum=.9):
+    def __init__(self, env, k=2, model=None, lr=1e-4, momentum=.9):
         self.env = env
-        self.model = model or ParModel()
+        self.model = model or ParModel(k)
 
         self.lr = lr
         self.momentum = momentum
         self.optim = torch.optim.SGD(list(self.model.parameters()), lr=self.lr, momentum=self.momentum)
+
+    def infer(self, s):
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            inf = self.model(s)
+            return torch.exp(inf[:,0]).item(), inf[:,1].item()
 
     def loss(self, params, s, a, s_):
         p1, p2 = torch.exp(params[:, 0]), params[:, 1]

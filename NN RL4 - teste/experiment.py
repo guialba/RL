@@ -6,7 +6,7 @@ from matplotlib.patches import Circle, Rectangle
 
 class Trajectory:
     def __init__(self, env=None, size=None, policy=None):
-        self.policy = lambda _: np.random.choice(4, 1)[0] if policy is None else policy
+        self.policy = (lambda _: np.random.choice(4, 1)[0]) if policy is None else policy
         self.env = env
         self.size = size or np.inf
 
@@ -35,8 +35,8 @@ class Trajectory:
     def plot(self, ax=None):
         if ax is None:
             _, ax = plt.subplots(figsize=(5, 5))
-
-        df_s = pd.DataFrame(self.run.s.to_list(), columns=['x','y'])
-        ax.plot(df_s.x, df_s.y, color='black')
+        
+        df_s = pd.DataFrame(self.run.s.to_list() + self.run.s_.to_list()[-1:], columns=['x','y'])
+        ax.plot(df_s.x, df_s.y, color='red')
 
         return ax
