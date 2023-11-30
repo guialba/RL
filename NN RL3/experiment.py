@@ -2,41 +2,48 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, Rectangle
+# from matplotlib.patches import Circle, Rectangle
 
-class Trajectory:
-    def __init__(self, env=None, size=None, policy=None):
-        self.policy = (lambda _: np.random.choice(4, 1)[0]) if policy is None else policy
-        self.env = env
-        self.size = size or np.inf
+from environment import NormalMoveEnv
+from rl import Agent, Trajectory
 
-        self.run = pd.DataFrame({'step':[], 's':[], 'a':[], 'r':[], 's_':[], 'end':[]})
-        
-        if env is not None:
-            self.generate()
+class Experiment:
+    def __init__(self, **params):
+        self.env_class = params.get('env_class') or NormalMoveEnv
+        self.env_params = params.get('env_params') or {}
 
-    def step(self, step, s, a, r, s_, end):
-        self.run = pd.concat([self.run, pd.DataFrame({'step':[int(step)], 's':[s], 'a':[int(a)], 'r':[int(r)], 's_':[s_], 'end':[int(end)]})])
+        self.agents_config = [agent for agent in params.get('agents')]
 
-    def generate(self):   
-        i, end = 0, False
-        s = self.env.reset()
-        while not end:
-            a = self.policy(s)
-            s_, r, end = self.env.step(a)
-            i += 1
-            self.step(i, s, a, r, s_, end)
-            # self.run = pd.concat([self.run, pd.DataFrame({'step':[int(i)], 's':[s], 'a':[int(a)], 'r':[int(r)], 's_':[s_], 'end':[int(end)]})])
-            # self.run.append((i, s,a,r,s_ end))
-            end = end or (i>=self.size)
-            s = s_
-        return self.run
+        self.episodes_size_limit = params.get('episodes_size_limit') or 300
+        self.runs =  params.get('runs') or 100
+        self.replays =  params.get('replays') or 1
+
+        template = {'run':[], 'play':[]}
+        template.update({f'model_{i}':[] for i,_ in enumerate(self.agents_config)})
+        self.data = pd.DataFrame(template)
+
+    def reset_run(self):
+        self.env = self.env_class(**self.env_params)
+        self.agents = [Agent(self.env, **config) for config in self.agents_config]
+
+    def run(self):
+        trajectories_sizes = []
+        for agent in self.agents:
+            try:
+                agent.reset()
+                agent.episode(size_limit=self.episodes_size_limit)
+                trajectories_sizes.append(agent.trajectory.run.shape[0])
+            except:
+                trajectories_sizes.append(np.nan)
+        return trajectories_sizes
     
-    def plot(self, ax=None):
-        if ax is None:
-            _, ax = plt.subplots(figsize=(5, 5))
-        
-        df_s = pd.DataFrame(self.run.s.to_list() + self.run.s_.to_list()[-1:], columns=['x','y'])
-        ax.plot(df_s.x, df_s.y, color='red')
+    def execute(self):
+        for n in range(self.runs):
+            self.reset_run()
+            for m in range(self.replays):
+                template = {'run':[n], 'play':[m]}
+                data = self.run()
+                template.update({f'model_{i}':[d] for i,d in enumerate(data)})
+                self.data = pd.concat([self.data, pd.DataFrame(template)])
 
-        return ax
+        

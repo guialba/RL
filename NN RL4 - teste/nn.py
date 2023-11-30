@@ -12,6 +12,25 @@ import pandas as pd
 import matplotlib.pyplot as plt
 # from matplotlib.patches import Circle, Rectangle
 
+class TrModel(nn.Module):
+    def __init__(self, n_params=2, n_features=3, n_hidden=10):
+        super(TrModel, self).__init__()
+        self.n_params = n_params
+        self.n_features = n_features
+        self.n_hidden = n_hidden
+        self.model = nn.Sequential(
+            nn.Linear(n_features, n_hidden).double(),
+            nn.ReLU(),
+            nn.Linear(n_hidden, n_hidden).double(),
+            nn.ReLU(),
+            nn.Linear(n_hidden, n_hidden).double(),
+            nn.ReLU(),
+            nn.Linear(n_hidden, n_params).double(),
+        )
+        
+    def forward(self, x):
+        return self.model(x)
+
 class ParModel(nn.Module):
     def __init__(self, n_params=2, n_features=2, n_hidden=10):
         super(ParModel, self).__init__()
@@ -89,7 +108,7 @@ class Model:
             self.params = [torch.tensor(p).type(torch.DoubleTensor) for p in model_params]
         self.n_params = len(self.params)
 
-    def infer(self, s):
+    def infer(self, s, _):
         with torch.no_grad():
             s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
             # m = torch.round(self.model(s))[0]
@@ -189,7 +208,6 @@ class Model:
 
         return ax
 
-
 class GeneralModel:
     def __init__(self, env, model=None, lr=1e-4, momentum=.9, n_params=2):
         self.env = env
@@ -201,7 +219,7 @@ class GeneralModel:
         self.momentum = momentum
         self.optim = torch.optim.SGD(list(self.model.parameters()), lr=self.lr, momentum=self.momentum)
 
-    def infer(self, s):
+    def infer(self, s, _):
         with torch.no_grad():
             s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
             inf = self.model(s)
@@ -287,3 +305,191 @@ class GeneralModel:
         print('Parametros estimados para cada estado.')
         return None
     
+class TransitionModel:
+    def __init__(self, env, k=2, lr=1e-4, momentum=.9):
+        self.env = env
+        self.k = k
+        self.models = [TrModel() for _ in range(k)]
+        self.chooser = BetaModel(k)
+
+        self.lr = lr
+        self.momentum = momentum
+        l = list(self.chooser.parameters())
+        for model in self.models:
+            l = l+list(model.parameters())
+        self.optim = torch.optim.SGD(l, lr=self.lr, momentum=self.momentum)
+
+    def infer(self, s, a):
+        s_a = np.stack((s[0], s[1], a), axis=-1)
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            choice = torch.argmax(self.chooser(s))
+            s_ = self.models[choice.item()](torch.from_numpy(s_a.reshape(1,3)).type(torch.DoubleTensor))
+            return choice.item(), s_[0]
+        
+    def loss(self, choices, outputs, s_):
+        errors = torch.stack([(s_[:,0] - output[:,0])**2 + (s_[:,1] - output[:,1])**2 for output in outputs] , axis=-1)
+        return -torch.sum(torch.take(errors, torch.argmax(choices, dim=1)))
+   
+    def decompose_data(self, data):
+        s = torch.from_numpy(data['s'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
+        s_ = torch.from_numpy(data['s_'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
+        s_a = torch.stack((
+            s[:,0],
+            s[:,1],
+            torch.from_numpy(data.a.iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor).reshape(-1)
+        ), axis=-1)
+
+        return s, s_a, s_
+
+    def batch_train(self, historic_data, epochs=100, log=False):
+        s, s_a, s_ = self.decompose_data(historic_data)       
+        register = []
+        
+        self.chooser.train(True)
+        for model in self.models:
+            model.train(True)
+        for epoch in range(epochs):
+            self.optim.zero_grad()
+            choices = self.chooser(s)
+            outputs = [model(s_a) for model in self.models]
+            # if log:
+            #     # print(epoch, torch.any(outputs[:,0] == 0.0), torch.any(outputs[:,1] == 0.0))
+                # print(epoch, torch.any(outputs == 0.0), torch.any(outputs == np.inf), torch.any(outputs == np.nan))
+
+            ll = self.loss(choices, outputs, s_)
+            if log:
+                print(epoch, ll.item())
+
+            ll.backward()
+            self.optim.step() 
+            register.append(ll.item())
+        
+        self.chooser.train(False)
+        for model in self.models:
+            model.train(False)
+
+        return register
+    
+    def plot_probs(self, ax=None):
+        if ax is None:
+            _, ax = plt.subplots(ncols=self.n_params, figsize=(self.n_params*5, 5))
+        
+        size = 10
+        res = 50
+        lin = np.linspace(-size, size, res).reshape(-1,1)
+        X,Y = np.meshgrid(lin, lin)
+
+        d = torch.from_numpy( np.stack((X, Y), axis=-1).reshape(-1, 2) ).type(torch.DoubleTensor)
+        with torch.no_grad():
+            pred = self.chooser(d)
+            for k in range(self.k):
+                corr = pred[:,k].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
+                p = ax[k].imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1), vmin = 0, vmax = 1)
+                plt.colorbar(p)
+                ax[k].invert_yaxis()
+                # ax[k].text(-size,size+3, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()[k]}')
+                # ax[k].text(-size,size+1.5, f'tau: {torch.round(self.taus, decimals=3).tolist()[k]}')
+                ax[k].set_title(f'model_{k}')
+        return ax
+    
+    def plot_values(self, ax=None):
+        print('transições estimadas diretamente.')
+        return None
+    
+
+class TransitionModel2:
+    def __init__(self, env, k=2, lr=1e-4, momentum=.9):
+        self.env = env
+        self.k = k
+        self.models = [TrModel() for _ in range(k)]
+        self.chooser = BetaModel(k)
+
+        self.lr = lr
+        self.momentum = momentum
+        l = list(self.chooser.parameters())
+        for model in self.models:
+            l = l+list(model.parameters())
+        self.optim = torch.optim.SGD(l, lr=self.lr, momentum=self.momentum)
+
+    def infer(self, s, a):
+        s_a = np.stack((s[0], s[1], a), axis=-1)
+        with torch.no_grad():
+            s = torch.from_numpy(s.reshape(1,2)).type(torch.DoubleTensor)
+            choice = torch.argmax(self.chooser(s))
+            s_ = self.models[choice.item()](torch.from_numpy(s_a.reshape(1,3)).type(torch.DoubleTensor))
+            return choice.item(), s_[0]
+        
+    def loss(self, choices, outputs, s_):
+        errors = torch.stack([(s_[:,0] - output[:,0])**2 + (s_[:,1] - output[:,1])**2 for output in outputs] , axis=-1)
+        return -torch.sum(torch.take(errors, torch.argmax(choices, dim=1)))
+   
+    def decompose_data(self, data):
+        s = torch.from_numpy(data['s'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
+        s_ = torch.from_numpy(data['s_'].iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor)
+        s_a = torch.stack((
+            s[:,0],
+            s[:,1],
+            torch.from_numpy(data.a.iloc[:].apply(pd.Series).to_numpy()).type(torch.DoubleTensor).reshape(-1)
+        ), axis=-1)
+
+        return s, s_a, s_
+
+    def batch_train(self, historic_data, epochs=100, log=False):
+        s, s_a, s_ = self.decompose_data(historic_data)       
+        register = []
+
+        loss = nn.MSELoss()
+        
+        self.chooser.train(True)
+        for model in self.models:
+            model.train(True)
+        for epoch in range(epochs):
+            self.optim.zero_grad()
+            choices = self.chooser(s)
+            outputs = [model(s_a) for model in self.models]
+            # if log:
+            #     # print(epoch, torch.any(outputs[:,0] == 0.0), torch.any(outputs[:,1] == 0.0))
+                # print(epoch, torch.any(outputs == 0.0), torch.any(outputs == np.inf), torch.any(outputs == np.nan))
+
+            err = loss(outputs[])
+            ll = self.loss(choices, outputs, s_)
+            if log:
+                print(epoch, ll.item())
+
+            ll.backward()
+            err.backward()
+            self.optim.step() 
+            register.append(ll.item())
+        
+        self.chooser.train(False)
+        for model in self.models:
+            model.train(False)
+
+        return register
+    
+    def plot_probs(self, ax=None):
+        if ax is None:
+            _, ax = plt.subplots(ncols=self.n_params, figsize=(self.n_params*5, 5))
+        
+        size = 10
+        res = 50
+        lin = np.linspace(-size, size, res).reshape(-1,1)
+        X,Y = np.meshgrid(lin, lin)
+
+        d = torch.from_numpy( np.stack((X, Y), axis=-1).reshape(-1, 2) ).type(torch.DoubleTensor)
+        with torch.no_grad():
+            pred = self.chooser(d)
+            for k in range(self.k):
+                corr = pred[:,k].reshape(int(X.size**(1/2)), int(X.size**(1/2)))
+                p = ax[k].imshow(corr, extent=(int(min(lin))-1, int(max(lin))+1, int(max(lin))+1, int(min(lin))-1), vmin = 0, vmax = 1)
+                plt.colorbar(p)
+                ax[k].invert_yaxis()
+                # ax[k].text(-size,size+3, f'sigma: {torch.round(torch.exp(self.sigmas), decimals=3).tolist()[k]}')
+                # ax[k].text(-size,size+1.5, f'tau: {torch.round(self.taus, decimals=3).tolist()[k]}')
+                ax[k].set_title(f'model_{k}')
+        return ax
+    
+    def plot_values(self, ax=None):
+        print('transições estimadas diretamente.')
+        return None

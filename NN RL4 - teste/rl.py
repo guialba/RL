@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from experiment import Trajectory
-from nn import Model
+from nn import Model, GeneralModel
 
 class Agent:
     def __init__(self, env, td_model_steps=5, memory_size=0, state_space_size=50, model=Model, **model_params):
@@ -27,11 +27,17 @@ class Agent:
         # return (np.array(s)*100).astype(int)  
 
     def plan(self, s):
-        calc_dist = lambda s_: min([((goal.low[0]-s_[0])**2 + (goal.low[1]-s_[1])**2)**(1/2) for goal in self.env.goals])
-        sigma, tau = self.model.infer(s)
-        dists = np.array([calc_dist(self.env.transition(s,a,tau,sigma)) for a in range(4)])
+        calc_dist = lambda _, s_, : min([((goal.low[0]-s_[0])**2 + (goal.low[1]-s_[1])**2)**(1/2) for goal in self.env.goals])
 
-        return np.argmin(dists)
+        if type(self.model) in (type(GeneralModel(self.env)), type(Model(self.env))):
+            sigma, tau = self.model.infer(s)
+            dists = np.array([calc_dist(a, self.env.transition(s,a,tau,sigma)) for a in range(4)])
+
+            return np.argmin(dists)
+        else:
+            dists = np.array([calc_dist(*self.model.infer(s, a)) for a in range(4)])
+
+            return np.argmin(dists)
  
     def episode(self, size_limit=None, log=False):
         if self.trajectory is None:

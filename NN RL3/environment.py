@@ -9,27 +9,32 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle
 
 class NormalMoveEnv():
-    def __init__(self, punishment=-100, sigma=(.01, .3), tau=(1., -1.), wolrd_size=10., start=([-5., -9.5],[9.5, -2.]), goals=[([7.5,7.5],[10.,10.])], walls=[([-8.,-1.],[10., 1.])]):
+    def __init__(self, 
+                 wolrd_size=10., 
+                 punishment=-100, 
+                 sigma=(.01, .3), 
+                 tau=(1., -1.), 
+                 start=([-5., -9.5],[9.5, -2.]), 
+                 goals=[([7.5,7.5],[10.,10.])], 
+                 walls=[([-8.,-1.],[10., 1.])],
+                 beta=None,
+                 transition=None
+                ):
         self.wolrd_size = wolrd_size
-        
         self.start = start
         self.punishment = punishment
         self.actions = np.array([[1,0], [-1,0], [0,1], [0,-1]])
         self.sigma, self.tau = sigma, tau
         self.theta = [None, sigma, tau]
-
-        self.transition = lambda s,a,t,sig: (s + self.actions[a]*t + np.random.normal(0, sig, 2)).astype(np.float32)
-        self.beta = lambda s: s[1]>1.0
-        # self.mu = lambda s,a: (s + self.actions[a]*self.tau[self.beta(s)] + np.random.normal(0, self.sigma[self.beta(s)], 2)).astype(np.float32)
+        self.transition = transition or (lambda s,a,t,sig: (s + self.actions[a]*t + np.random.normal(0, sig, 2)).astype(np.float32))
+        self.beta = beta or (lambda s: s[1]>1.0)
         self.mu = lambda s,a: self.transition(s,a,self.tau[self.beta(s)], self.sigma[self.beta(s)]).astype(np.float32)
-
         self.walls = [spaces.Box(low=np.array(wall[0], dtype=np.float32), high=np.array(wall[1], dtype=np.float32), dtype=np.float32) for wall in walls]
         self.goals = [spaces.Box(low=np.array(goal[0], dtype=np.float32), high=np.array(goal[1], dtype=np.float32), dtype=np.float32) for goal in goals]
-
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=-wolrd_size, high=wolrd_size, shape=(2,), dtype=np.float32)
-
         self.state = None
+        self.initial_state = None
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         # self.initial_state = np.array([0.,-8.], dtype=np.float32)
@@ -87,7 +92,8 @@ class NormalMoveEnv():
             height = diff(*list(zip(goal.low, goal.high))[1])
             ax.add_patch(Rectangle(goal.low, width, height, edgecolor='green', facecolor='green', fill=True))
 
-        ax.add_patch(Circle(self.initial_state, radius=.2, edgecolor='white', facecolor='white', fill=True))
+        if self.initial_state is not None:
+            ax.add_patch(Circle(self.initial_state, radius=.2, edgecolor='white', facecolor='white', fill=True))
 
         return ax
     
