@@ -82,13 +82,13 @@ class RRT:
     #             break
 
     def explore(self, max_iterations=100, node=None):
-        new_node = node or self.tree
+        old_node = node or self.tree
         if max_iterations>0:
-            moves = [self.transition(new_node.value, a) for a in self.actions]
+            moves = [self.transition(old_node.value, a) for a in self.actions]
             for i,move in enumerate(moves):
                 # best = np.argmin(np.array([self.goal_dist(p) for p in moves]))
-                nearest_node = self.find_nearest(move)
-                new_node = self.extend(nearest_node, move, self.actions[i])
+                # nearest_node = self.find_nearest(move)
+                new_node = self.extend(old_node, move, self.actions[i])
                 if self.goal_dist(move) <= 0.1:
                     return
                 else:
@@ -117,9 +117,9 @@ class RRT:
         return best
 
     def extend(self, from_node, to_point, action):
-        new_node = Node(to_point, from_node)
+        new_node = Node(to_point, from_node, action)
         from_node.children.append(new_node)
-        from_node.cost = action
+        # from_node.cost = action
         return new_node
     
     def plot(self, ax=None, path=None):
@@ -199,8 +199,8 @@ class Agent:
             self.plan_trees.append(plan_tree)
             self.plans.append(actual_plan)
         
-        step = self.plans[-1][-self.plan_step]
         self.plan_step += 1
+        step = self.plans[-1][-self.plan_step]
         return step.cost
  
     def episode(self, size_limit=None, log=False):

@@ -1,2 +1,6 @@
 RL/
 examples/
+planejamento/EP3/ckpt/
+planejamento/EP3/logs/
+planejamento/_ckpt/
+planejamento/_logs/
